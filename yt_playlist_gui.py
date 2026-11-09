@@ -14,6 +14,7 @@ Requirements:
 import os
 import queue
 import shutil
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -56,6 +57,21 @@ class QuietLogger:
         self.q.put(("log", "Error: " + msg))
 
 
+def find_ffmpeg_dir():
+    """Look for ffmpeg.exe bundled inside the .exe, or next to it / next to the script.
+    Returns the folder, or None to fall back to ffmpeg in PATH."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(getattr(sys, "_MEIPASS", ""))
+        candidates.append(os.path.dirname(sys.executable))
+    else:
+        candidates.append(os.path.dirname(os.path.abspath(__file__)))
+    for d in candidates:
+        if d and os.path.isfile(os.path.join(d, "ffmpeg.exe")):
+            return d
+    return None
+
+
 def build_format(max_height):
     """Pick the best video+audio up to max_height; if a video has less, take what it has."""
     if max_height is None:
@@ -81,7 +97,8 @@ class App(tk.Tk):
         self._build_ui()
         self.after(100, self._poll_queue)
 
-        if not shutil.which("ffmpeg"):
+        self.ffmpeg_dir = find_ffmpeg_dir()
+        if not self.ffmpeg_dir and not shutil.which("ffmpeg"):
             self._log("WARNING: ffmpeg was not found in PATH. Merging video+audio will fail.")
 
     # ---------- UI ----------
@@ -200,6 +217,8 @@ class App(tk.Tk):
                 "progress_hooks": [hook],
                 "logger": QuietLogger(self.q),
             }
+            if self.ffmpeg_dir:
+                opts["ffmpeg_location"] = self.ffmpeg_dir
             with yt_dlp.YoutubeDL(opts) as y:
                 y.download([url])
 
